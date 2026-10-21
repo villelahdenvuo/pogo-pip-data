@@ -447,6 +447,14 @@ def main():
             # Read off the detail screen to tell apart forms with identical stats (Alolan Muk).
             "types": [t for t in p["types"] if t != "none"],
         }
+        # Its moves as a raid boss: the regular pool, no Elite TM or legacy ones.
+        special = elite | set(legacy)
+        bf = [m for m in p.get("fastMoves", []) if m not in special]
+        bc = [m for m in p.get("chargedMoves", []) if m not in special and m not in ("RETURN", "FRUSTRATION")]
+        if bf:
+            entry["bf"] = bf
+        if bc:
+            entry["bc"] = bc
         if sid in RELEASED:
             # Not in PvPoke's rankings yet: the PiP says so rather than calling it unranked.
             entry["unrated"] = 1
@@ -521,6 +529,7 @@ def main():
     used |= {r[k] for rows in raid.values() for r in rows for k in ("f", "c")}
     used |= {r[k] for rows in raid_all.values() for r in rows for k in ("f", "c")}
     used |= {m for r in max_table(gm, gmpm) for m, _ in r["fast"]}
+    used |= {m for sp in species for m in sp.get("bf", []) + sp.get("bc", [])}
 
     # Megas' own types: a mega boosts its team's attacks of these types the most.
     mega_types = {p["speciesId"]: [t for t in p.get("types", []) if t != "none"] for p in gm["pokemon"]
@@ -540,6 +549,8 @@ def main():
         "moves": {m: moves[m]["name"] for m in sorted(used) if m in moves},
         "rankings": rankings,
         "megaTypes": mega_types,
+        # Each move's type, for what a raid boss's moves do to your counters.
+        "moveTypes": {m: moves[m]["type"] for m in sorted(used) if m in moves},
         "superMega": super_mega,
     }
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
