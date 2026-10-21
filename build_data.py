@@ -36,6 +36,8 @@ FORM_TOKENS = {"alolan": "ALOLA", "galarian": "GALARIAN", "hisuian": "HISUIAN", 
 # Out in GO while PvPoke still has them unreleased: id -> the name the game shows.
 RELEASED = {"minior_core": "Minior"}
 SHADOW_ATK, SHADOW_DEF = 1.2, 0.8333333
+# Movesets per species and type beyond its best, for rating one with the moves it knows.
+MORE_SETS = 2
 # The file's shape. The app reads v<FORMAT>/ and only one it knows; a change old apps can't read bumps it.
 FORMAT = 1
 
@@ -244,6 +246,7 @@ def raid_table(gm, gmpm, top=30):
         charged = [m for m in p.get("chargedMoves", []) if move(m) and m not in ("RETURN", "FRUSTRATION")]
         for t in TYPES:
             best = None
+            sets = []
             for c in charged:
                 cm = move(c)
                 if cm["type"] != t:
@@ -263,12 +266,16 @@ def raid_table(gm, gmpm, top=30):
                     dps = max(dps, fdps)
                     tdo = dps * hp / y
                     er = (dps ** 3 * tdo) ** 0.25
+                    sets.append((round(er, 2), f, c))
                     if best is None or er > best["er"]:
                         best = {"id": sid, "name": p["speciesName"], "f": f, "c": c, "er": round(er, 2),
                                 "dps": round(dps, 2), "tdo": round(tdo, 1)}
                         if f in elite or c in elite:
                             best["elite"] = 1
             if best:
+                # The next best movesets too, for rating one of yours with the moves it knows.
+                best["more"] = [{"f": f, "c": c, "er": er} for er, f, c in sorted(sets, key=lambda x: (-x[0], x[1], x[2]))
+                                if (f, c) != (best["f"], best["c"])][:MORE_SETS]
                 out[t].append(best)
     # Every species' best moveset per type, for rating your own at their real level and IVs:
     # {speciesId: [{t, f, c, er}, ...]}, only types where it's at least half the best.
@@ -277,8 +284,12 @@ def raid_table(gm, gmpm, top=30):
     for t in TYPES:
         for r in out[t]:
             if r["er"] >= best[t] * 0.5:
+                # Best first per type: apps that read one moveset take the first.
                 every.setdefault(r["id"], []).append({"t": t, "f": r["f"], "c": r["c"], "er": r["er"]})
+                every[r["id"]] += [{"t": t, **m} for m in r["more"] if m["er"] >= best[t] * 0.25]
     for t in TYPES:
+        for r in out[t]:
+            del r["more"]
         out[t] = sorted(out[t], key=lambda r: -r["er"])[:top]
     return out, every
 
@@ -511,6 +522,13 @@ def main():
     used |= {r[k] for rows in raid_all.values() for r in rows for k in ("f", "c")}
     used |= {m for r in max_table(gm, gmpm) for m, _ in r["fast"]}
 
+    # Megas' own types: a mega boosts its team's attacks of these types the most.
+    mega_types = {p["speciesId"]: [t for t in p.get("types", []) if t != "none"] for p in gm["pokemon"]
+                  if p.get("released") and ("_mega" in p["speciesId"] or p["speciesId"].endswith("_primal"))}
+    # Species whose megas reach level 4 (Super Mega): they fight 2 levels higher.
+    super_mega = sorted({e["data"]["megaEvoLevelSettings"]["pokemonId"].lower() for e in gmpm
+                         if e.get("templateId", "").startswith("MEGA_EVOLUTION_LEVEL_4_")})
+
     out = {
         "source": f"PvPoke gamemaster {gm.get('timestamp', '')}".strip(),
         "format": FORMAT,
@@ -521,6 +539,8 @@ def main():
         "species": species,
         "moves": {m: moves[m]["name"] for m in sorted(used) if m in moves},
         "rankings": rankings,
+        "megaTypes": mega_types,
+        "superMega": super_mega,
     }
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
