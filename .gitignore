@@ -1,0 +1,3 @@
+.cache/
+*.part
+__pycache__/
