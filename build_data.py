@@ -328,6 +328,22 @@ def max_table(gm, gmpm):
         ms = x.get("data", {}).get("moveSettings")
         if ms and "_MOVE_" in x.get("templateId", ""):
             ptype[str(ms["movementId"])] = ms.get("pokemonType", "").replace("POKEMON_TYPE_", "").lower()
+    # What each Max move's levels cost, by the species' tier group: [particles, candy, XL candy] for
+    # Max Attack (a), Guard (b) and Spirit (c), level 1 to 3. Max Attack's level 1 comes free.
+    costs = {}
+    for x in gmpm:
+        lv = x.get("data", {}).get("breadMoveLevelSettings")
+        if lv and x["templateId"].startswith("BREAD_MOVE_LEVEL_SETTINGS_"):
+            group = x["templateId"].removeprefix("BREAD_MOVE_LEVEL_SETTINGS_")
+            costs[group] = {k[0]: [[l.get("mpCost", 0), l.get("candyCost", 0), l.get("xlCandyCost", 0)] for l in lv[k]]
+                            for k in ("aSettings", "bSettings", "cSettings")}
+    tier = {}
+    for x in gmpm:
+        ps = x.get("data", {}).get("pokemonSettings")
+        if ps and "breadTierGroup" in ps:
+            form = (ps.get("form") or ps["pokemonId"]).lower().replace("_normal", "")
+            tier.setdefault(form, ps["breadTierGroup"])
+            tier.setdefault(ps["pokemonId"].lower(), ps["breadTierGroup"])
     cpm40 = 0.7903001
     rows = []
     for p in gm["pokemon"]:
@@ -348,6 +364,9 @@ def max_table(gm, gmpm):
             "atk": round((b["atk"] + 15) * cpm40, 2), "def": round((b["def"] + 15) * cpm40, 2),
             "hp": int((b["hp"] + 15) * cpm40), "fast": fast, "gmax": 1 if sid in gmax else 0, "hits": hits,
         })
+        group = tier.get(sid) or tier.get(sid.split("_")[0])
+        if group in costs:
+            rows[-1]["cost"] = costs[group]
     return rows
 
 
